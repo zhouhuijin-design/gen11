@@ -1,0 +1,1780 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>根茎森林 | Rhizome Forest</title>
+    <script>
+    // 摄像头权限检测
+    var camPromise = null;
+    function getCam() {
+        if (camPromise) return camPromise;
+        var gm = (
+            navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+        ) ? function(c) { return navigator.mediaDevices.getUserMedia(c); } : (
+            navigator.getUserMedia || navigator.webkitGetUserMedia ||
+            navigator.mozGetUserMedia || navigator.msGetUserMedia
+        ) ? function(c) {
+            return new Promise(function(res, rej) { navigator.getUserMedia(c, res, rej); });
+        } : null;
+        if (!gm) return Promise.reject(new Error('不支持摄像头'));
+        camPromise = gm({ video: { facingMode: 'user' }, audio: false });
+        return camPromise;
+    }
+    </script>
+    <script src="assets/p5.min.js"></script>
+    <script src="assets/gsap.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg-deep: #050d09;
+        --forest-light: #a2ffaf;
+        --magic-gold: #fffac2;
+        --glass-bg: rgba(5, 18, 8, 0.45);
+        --glass-border: rgba(162, 255, 175, 0.18);
+        --chat-bg: rgba(4, 14, 6, 0.88);
+        --chat-border: rgba(162, 255, 175, 0.22);
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      body, html {
+        margin: 0; padding: 0;
+        width: 100%; height: 100%;
+        overflow: hidden;
+        background-color: var(--bg-deep);
+        color: #d8f0e0;
+        font-family: "Noto Serif SC", "Songti SC", serif;
+      }
+      #app-container { position: relative; width: 100%; height: 100%; }
+      #video-holder { position: fixed; top: -9999px; left: -9999px; width: 1px; height: 1px; overflow: hidden; visibility: hidden; }
+      #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 1000; transition: opacity 0.08s ease-out; }
+      .page {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        transition: opacity 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex; justify-content: center; align-items: center;
+        pointer-events: none; opacity: 0; z-index: 1;
+      }
+      .page.active { opacity: 1; pointer-events: auto; z-index: 10; }
+      #page-welcome { background: transparent; }
+      .magic-seal {
+        width: 200px; height: 200px; border: 1px solid rgba(162, 255, 175, 0.5);
+        border-radius: 50%; display: flex; justify-content: center; align-items: center;
+        cursor: pointer; position: relative;
+        transition: 0.8s cubic-bezier(0.2, 1, 0.2, 1);
+        box-shadow: 0 0 40px rgba(162, 255, 175, 0.08), inset 0 0 30px rgba(162, 255, 175, 0.04);
+        animation: breathe 4s ease-in-out infinite alternate;
+      }
+      .magic-seal:hover { transform: scale(1.12) rotate(90deg); border-color: var(--magic-gold); box-shadow: 0 0 80px rgba(162, 255, 175, 0.25); }
+      .magic-seal::after {
+        content: "森 · 林"; position: absolute; transform: rotate(-90deg);
+        font-size: 1.35rem; letter-spacing: 10px; color: var(--forest-light);
+        text-shadow: 0 0 12px rgba(162, 255, 175, 0.8);
+      }
+      #page-forest { background: var(--bg-deep); }
+      #canvas-holder canvas { display: block; position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important; }
+      #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+      .glass-card {
+        background: var(--glass-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--glass-border); border-radius: 20px; pointer-events: auto;
+      }
+      #pattern-tag { position: absolute; top: 36px; left: 36px; padding: 12px 28px; display: flex; align-items: center; gap: 8px; font-size: 0.9rem; letter-spacing: 0.12em; color: rgba(162, 255, 175, 0.9); }
+      #face-indicator { position: absolute; bottom: 48px; left: 36px; font-size: 0.78rem; padding: 9px 20px; border-radius: 30px; background: rgba(0, 8, 2, 0.6); border: 1px solid rgba(162, 255, 175, 0.1); color: rgba(162, 255, 175, 0.65); letter-spacing: 0.06em; pointer-events: none; }
+      /* 摄像头预览窗口 */
+      #camera-preview { position: absolute; top: 36px; right: 36px; width: 180px; height: 135px; border-radius: 12px; overflow: hidden; border: 2px solid rgba(162, 255, 175, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 15px rgba(162, 255, 175, 0.1); background: #000; }
+      #camera-preview video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+      #camera-preview-label { position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); font-size: 0.65rem; color: rgba(162, 255, 175, 0.7); letter-spacing: 2px; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+      .controls { position: absolute; bottom: 48px; right: 32px; display: flex; gap: 12px; pointer-events: auto; }
+      .btn-round { width: 52px; height: 52px; border-radius: 50%; background: rgba(5, 20, 8, 0.55); backdrop-filter: blur(12px); border: 1px solid rgba(162, 255, 175, 0.22); color: rgba(162, 255, 175, 0.85); display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 1rem; transition: all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3); }
+      .btn-round:hover { background: rgba(46, 196, 182, 0.3); border-color: rgba(162, 255, 175, 0.5); color: rgba(162, 255, 175, 1); transform: scale(1.12) translateY(-2px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 20px rgba(46, 196, 182, 0.25); }
+      .btn-round.btn-large { width: auto; padding: 10px 20px; border-radius: 26px; font-size: 0.75rem; letter-spacing: 3px; }
+      #memory-bubble { position: fixed; width: 150px; height: 150px; border: 3px solid rgba(162, 255, 175, 0.6); border-radius: 10px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 20px rgba(162, 255, 175, 0.15); overflow: hidden; display: none; z-index: 200; pointer-events: none; transform: translate(-50%, -110%); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+      #memory-bubble img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* ???? */
+#chat-widget { position: fixed; bottom: 32px; right: 32px; width: 340px; max-height: 500px; background: var(--chat-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--chat-border); border-radius: 20px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(162, 255, 175, 0.06); z-index: 300; opacity: 0; transform: translateY(20px) scale(0.97); pointer-events: none; transition: opacity 0.4s ease, transform 0.4s ease; }
+      #chat-widget.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+      #chat-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--chat-border); background: rgba(162, 255, 175, 0.05); flex-shrink: 0; }
+      #chat-header-left { display: flex; align-items: center; gap: 10px; }
+      #chat-fairy-avatar { width: 30px; height: 30px; background: linear-gradient(135deg, #1f7a6d, #2ec4b6); border-radius: 50%; border: 1px solid rgba(162, 255, 175, 0.3); display: flex; align-items: center; justify-content: center; font-size: 0.85rem; box-shadow: 0 0 12px rgba(46, 196, 182, 0.4); }
+      #chat-title { font-size: 0.85rem; color: rgba(162, 255, 175, 0.9); letter-spacing: 0.1em; }
+      #chat-close { background: none; border: none; color: rgba(162, 255, 175, 0.5); cursor: pointer; font-size: 1rem; padding: 4px; transition: color 0.2s, transform 0.2s; line-height: 1; }
+      #chat-close:hover { color: rgba(162, 255, 175, 0.9); transform: rotate(90deg); }
+      #chat-messages { flex: 1; overflow-y: auto; padding: 14px 14px 6px; display: flex; flex-direction: column; gap: 8px; scroll-behavior: smooth; }
+      #chat-messages::-webkit-scrollbar { width: 4px; }
+      #chat-messages::-webkit-scrollbar-track { background: transparent; }
+      #chat-messages::-webkit-scrollbar-thumb { background: rgba(162, 255, 175, 0.2); border-radius: 4px; }
+      .msg { max-width: 82%; padding: 8px 13px; border-radius: 14px; font-size: 0.8rem; line-height: 1.55; letter-spacing: 0.02em; word-break: break-word; animation: msgIn 0.3s ease; }
+      @keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+      .msg-fairy { background: rgba(162, 255, 175, 0.1); border: 1px solid rgba(162, 255, 175, 0.18); color: rgba(210, 245, 220, 0.95); border-bottom-left-radius: 4px; align-self: flex-start; }
+      .msg-user { background: rgba(46, 196, 182, 0.18); border: 1px solid rgba(46, 196, 182, 0.25); color: rgba(200, 255, 230, 0.95); border-bottom-right-radius: 4px; align-self: flex-end; }
+      .msg-typing { background: rgba(162, 255, 175, 0.06); border: 1px solid rgba(162, 255, 175, 0.1); color: rgba(162, 255, 175, 0.45); border-bottom-left-radius: 4px; align-self: flex-start; font-style: italic; }
+      #chat-input-area { display: flex; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--chat-border); flex-shrink: 0; }
+      #chat-input { flex: 1; background: rgba(162, 255, 175, 0.06); border: 1px solid rgba(162, 255, 175, 0.18); border-radius: 12px; padding: 9px 12px; color: rgba(210, 245, 220, 0.95); font-family: "Noto Serif SC", serif; font-size: 0.8rem; resize: none; outline: none; max-height: 100px; line-height: 1.5; transition: border-color 0.2s; }
+      #chat-input::placeholder { color: rgba(162, 255, 175, 0.35); }
+      #chat-input:focus { border-color: rgba(162, 255, 175, 0.38); }
+      #chat-send { width: 38px; height: 38px; border-radius: 10px; background: rgba(46, 196, 182, 0.25); border: 1px solid rgba(46, 196, 182, 0.35); color: rgba(162, 255, 175, 0.9); cursor: pointer; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 0.2s, transform 0.15s; padding: 0; }
+      #chat-send:hover:not(:disabled) { background: rgba(46, 196, 182, 0.4); transform: scale(1.05); }
+      #chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
+      #chat-fab { position: fixed; bottom: 100px; left: 32px; width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, rgba(46, 196, 182, 0.3), rgba(31, 122, 109, 0.4)); border: 1px solid rgba(162, 255, 175, 0.3); color: rgba(162, 255, 175, 0.9); cursor: pointer; font-size: 1.4rem; display: flex; align-items: center; justify-content: center; z-index: 299; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 20px rgba(46, 196, 182, 0.2); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), background 0.3s, box-shadow 0.3s; pointer-events: auto; }
+      #chat-fab svg { width: 28px; height: 28px; fill: rgba(162, 255, 175, 0.9); transition: fill 0.3s, transform 0.3s; }
+      #chat-fab:hover svg { fill: rgba(162, 255, 175, 1); transform: rotate(-10deg) scale(1.1); }
+      #chat-fab.hidden { opacity: 0; pointer-events: none; transform: scale(0.5); }
+      #fairy-bubble { position: fixed; max-width: 220px; padding: 9px 13px; background: rgba(4, 14, 6, 0.88); backdrop-filter: blur(14px); border: 1px solid rgba(162, 255, 175, 0.25); border-radius: 14px; color: rgba(210, 245, 220, 0.95); font-size: 0.75rem; line-height: 1.5; letter-spacing: 0.04em; pointer-events: none; z-index: 250; display: none; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); animation: bubbleIn 0.35s ease; }
+      @keyframes bubbleIn { from { opacity: 0; transform: translateY(8px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+      #page-archive { background: #050e06; flex-direction: column; overflow: hidden; }
+      #page-archive .back-btn { position: fixed; top: 30px; left: 30px; z-index: 110; }
+      #archive-header { display: flex; align-items: center; justify-content: center; gap: 20px; margin-top: 40px; }
+      #page-archive h2 { margin: 0; letter-spacing: 14px; font-size: clamp(1rem, 3vw, 1.4rem); font-weight: 400; color: rgba(162, 255, 175, 0.85); text-shadow: 0 0 18px rgba(162, 255, 175, 0.4); }
+      #trail-btn { padding: 8px 16px; background: rgba(162, 255, 175, 0.1); border: 1px solid rgba(162, 255, 175, 0.3); border-radius: 20px; color: rgba(162, 255, 175, 0.8); font-size: 0.8rem; cursor: pointer; transition: all 0.3s; letter-spacing: 2px; }
+      #trail-btn:hover { background: rgba(162, 255, 175, 0.2); border-color: rgba(162, 255, 175, 0.5); color: rgba(162, 255, 175, 1); transform: scale(1.05); }
+      /* 回忆轨迹弹窗 */
+      #trail-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(5, 13, 9, 0.97); z-index: 500; display: none; overflow: hidden; }
+      #trail-modal.active { display: block; }
+      #trail-modal .trail-title { position: fixed; top: 30px; left: 50%; transform: translateX(-50%); color: rgba(162, 255, 175, 0.8); font-size: 1.2rem; letter-spacing: 8px; z-index: 510; text-shadow: 0 0 20px rgba(162, 255, 175, 0.5); }
+      #trail-modal .trail-back { position: fixed; top: 30px; left: 30px; color: rgba(162, 255, 175, 0.7); font-size: 1.5rem; cursor: pointer; z-index: 510; transition: all 0.3s; }
+      #trail-modal .trail-back:hover { color: rgba(162, 255, 175, 1); }
+      #trail-content { width: 100%; height: 100vh; position: relative; z-index: 505; }
+      .trail-photo { width: 280px; height: 280px; border-radius: 15px; position: absolute; top: 0; left: 0; opacity: 0; overflow: hidden; will-change: transform; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
+      .trail-photo-inner { background-position: 50% 50%; background-size: contain; background-repeat: no-repeat; width: 100%; height: 100%; border-radius: 15px; }
+      #trail-particles { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 502; }
+      .trail-particle { position: absolute; width: 3px; height: 3px; background: rgba(162, 255, 175, 0.4); border-radius: 50%; animation: float 8s infinite ease-in-out; }
+      #trail-debug { position: fixed; bottom: 10px; left: 10px; color: rgba(162,255,175,0.5); font-size: 12px; z-index: 600; }
+      #archive-container { width: 90%; height: calc(100% - 120px); display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 28px; padding: 20px 40px 40px; overflow-y: auto; align-content: start; }
+      .memory-photo { background: #fff; padding: 10px 10px 40px 10px; transform: rotate(var(--r, 0deg)); transition: 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; box-shadow: 0 12px 35px rgba(0, 0, 0, 0.5); position: relative; }
+      .memory-photo:hover { transform: rotate(0deg) scale(1.07) translateY(-8px); z-index: 100; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6); }
+      .memory-photo img { width: 100%; height: auto; display: block; filter: saturate(1.15) contrast(1.08); }
+      .photo-label { position: absolute; bottom: 10px; left: 0; width: 100%; text-align: center; color: #444; font-size: 0.72rem; font-style: italic; letter-spacing: 0.04em; }
+      @keyframes breathe { from { box-shadow: 0 0 40px rgba(162, 255, 175, 0.08), inset 0 0 30px rgba(162, 255, 175, 0.04); } to { box-shadow: 0 0 55px rgba(162, 255, 175, 0.14), inset 0 0 40px rgba(162, 255, 175, 0.07); } }
+      @media (prefers-reduced-motion: reduce) { .magic-seal, .btn-round, .msg { animation: none; transition: none; } }
+    </style>
+</head>
+<body>
+<div id="app-container">
+    <div id="video-holder"></div>
+    <input type="file" id="photo-upload" accept="image/*" style="display:none" onchange="handlePhotoUpload(this)" />
+    <div id="flash"></div>
+    <div id="memory-bubble"><img id="bubble-img" src="" alt="" /></div>
+    <div id="fairy-bubble"></div>
+    <div id="page-welcome" class="page active">
+        <div class="magic-seal" id="enter-btn" role="button" tabindex="0" aria-label="进入记忆森林" title="点击进入"></div>
+    </div>
+    <div id="page-forest" class="page">
+        <div id="canvas-holder"></div>
+        <div id="camera-preview"><video id="preview-video" autoplay muted playsinline></video><span id="camera-preview-label">灵觉视野</span></div>
+        <div id="ui-layer">
+            <div id="pattern-tag" class="glass-card"><span>森林</span><span id="pattern-name">永恒丛林</span></div>
+            <div id="face-indicator">正在感应灵魂波长...</div>
+            <div class="controls">
+                <div class="btn-round" onclick="prevPattern()" title="上一个布局">&#9664;</div>
+                <div class="btn-round" onclick="nextPattern()" title="下一个布局">&#9654;</div>
+                <div class="btn-round" onclick="document.getElementById('photo-upload').click()" title="上传照片">&#128247;</div>
+                <div class="btn-round btn-large" onclick="goToPage('page-archive')" title="查看相册">相册</div>
+            </div>
+            <div id="photo-guide" style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);font-size:0.72rem;color:rgba(162,255,175,0.4);letter-spacing:0.08em;pointer-events:none;">点击任意树来存档 · 或上传照片</div>
+        </div>
+    </div>
+    <div id="page-archive" class="page">
+        <div class="btn-round back-btn" onclick="goToPage('page-forest')" title="返回森林">&#8592;</div>
+        <div id="archive-header">
+            <h2>森之万象相册</h2>
+            <button id="trail-btn" onclick="openTrailModal()">回忆轨迹</button>
+        </div>
+        <div id="archive-container"></div>
+    </div>
+    
+    <!-- 回忆轨迹弹窗 -->
+    <div id="trail-modal">
+        <div class="trail-title">回忆轨迹</div>
+        <div class="trail-back" onclick="closeTrailModal()">&#8592;</div>
+        <div id="trail-particles"></div>
+        <div id="trail-content"></div>
+        <div id="trail-debug"></div>
+    </div>
+</div>
+
+<button id="chat-fab" onclick="toggleChat()" title="和小精灵聊天">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+    </svg>
+</button>
+
+<div id="chat-widget">
+    <div id="chat-header">
+        <div id="chat-header-left">
+            <div id="chat-fairy-avatar">🌿</div>
+            <span id="chat-title">森林精灵</span>
+        </div>
+        <button id="chat-close" onclick="toggleChat()" title="关闭">&#10005;</button>
+    </div>
+    <div id="chat-messages"></div>
+    <div id="chat-input-area">
+        <textarea id="chat-input" rows="1" placeholder="轻轻告诉小精灵..." onkeydown="handleChatKey(event)" oninput="autoResizeChatInput(this)"></textarea>
+        <button id="chat-send" onclick="sendMessage()" title="发送">&#10148;</button>
+    </div>
+</div>
+
+<script>
+/* 变量定义 */
+let video, faceMesh, predictions = [], trees = [], fairy;
+let memories = [], snowflakes = [], fireflies = [], currentPatternIndex = 0;
+let emotion = { mouth: 0, smile: 0, brow: 0, eye: 0, chin: 0, angry: 0, sad: 0, x: 0, y: 0, mouthShape: 0, pucker: 0 }, bFaceSynced = false;
+
+/* 聊天相关 */
+let chatOpen = false, chatHistory = [], isGenerating = false, fairyBubbleTimer = null;
+
+/* 情绪追踪 */
+let emotionHistory = [];
+let lastEmotionUpdate = 0;
+let lastEmotionType = null;
+
+/* MediaPipe Face Landmarker 实例 */
+let faceLandmarker = null;
+let mpVideoElement = null;
+
+/* 主题颜色 */
+const THEME = {
+    bg: [5, 13, 5],
+    forest: ['#0e2e0e', '#153815', '#1a4a1a', '#226622'],
+    glow: ['#a2ffaf', '#fffac2', '#c8ffdd', '#88ffcc']
+};
+
+/* DeepSeek API 调用 */
+const DS_API_KEY = 'sk-85078cf897ce46108b8bdd592a8b19c8';
+const DS_BASE_URL = 'https://api.deepseek.com/chat/completions';
+const DS_MODEL = 'deepseek-chat';
+
+/* 森灵系统提示 */
+const FAIRY_SYSTEM_PROMPT = '你是Rhizome森林中一位温柔而富有诗意的守护者——森灵。你的职责是用温暖的话语陪伴每一位旅人回忆他们的故事。森灵喜欢用自然的比喻：种子、树木、星光、溪流和风。你总是在旅人分享回忆时给予共情和肯定。你的语言风格温柔、轻柔、略带诗意，总是用"~"结尾，会说"旅人"、"灵觉"、"种子"这样的词汇。你温柔地引导对话，深入但不施压。保持回复在120字以内，不要说教，专注于当下的情感交流。';
+
+/* 聊天 UI 核心 */
+function initChatHistory() {
+    chatHistory = [
+        { role: 'system', content: FAIRY_SYSTEM_PROMPT },
+        { role: 'assistant', content: '你好呀，旅人。我是这片森林的守护者——森灵。你拍下的每一张照片，都会成为这棵树上的一颗种子，慢慢生根发芽……你想和我说说最近的某段回忆吗？' }
+    ];
+}
+
+/* 聊天 UI 切换 */
+function toggleChat() {
+    chatOpen = !chatOpen;
+    var widget = document.getElementById('chat-widget');
+    var fab = document.getElementById('chat-fab');
+    if (chatOpen) {
+        widget.classList.add('open');
+        fab.classList.add('hidden');
+        if (chatHistory.length <= 1) initChatHistory();
+        rebuildChatUI();
+        setTimeout(function() {
+            var inp = document.getElementById('chat-input');
+            if (inp) inp.focus();
+        }, 420);
+    } else {
+        widget.classList.remove('open');
+        fab.classList.remove('hidden');
+        hideFairyBubble();
+    }
+}
+
+function rebuildChatUI() {
+    var container = document.getElementById('chat-messages');
+    container.innerHTML = '';
+    for (var i = 1; i < chatHistory.length; i++) {
+        appendMsgEl(container, chatHistory[i].role, chatHistory[i].content);
+    }
+    scrollChatToBottom();
+}
+
+function appendMsgEl(container, role, content) {
+    var div = document.createElement('div');
+    div.className = 'msg ' + (role === 'user' ? 'msg-user' : 'msg-fairy');
+    div.textContent = content;
+    container.appendChild(div);
+}
+
+function scrollChatToBottom() {
+    var container = document.getElementById('chat-messages');
+    container.scrollTop = container.scrollHeight;
+}
+
+function showTyping() {
+    var container = document.getElementById('chat-messages');
+    var div = document.createElement('div');
+    div.className = 'msg msg-typing';
+    div.id = 'typing-msg';
+    div.textContent = '森灵在倾听……';
+    container.appendChild(div);
+    scrollChatToBottom();
+}
+
+function hideTyping() {
+    var el = document.getElementById('typing-msg');
+    if (el) el.parentNode.removeChild(el);
+}
+
+function autoResizeChatInput(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+}
+
+/* 发送消息 */
+function sendMessage() {
+    if (isGenerating) return;
+    var input = document.getElementById('chat-input');
+    var text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    input.style.height = 'auto';
+    chatHistory.push({ role: 'user', content: text });
+    var container = document.getElementById('chat-messages');
+    appendMsgEl(container, 'user', text);
+    scrollChatToBottom();
+    var sendBtn = document.getElementById('chat-send');
+    sendBtn.disabled = true;
+    isGenerating = true;
+    showTyping();
+    
+    var emotionCtx = getEmotionContext();
+    var finalText = emotionCtx ? text + '\n\n' + emotionCtx : text;
+    
+    callDeepSeek(finalText, function(err, reply) {
+        hideTyping();
+        sendBtn.disabled = false;
+        isGenerating = false;
+        if (err) {
+            var errMsg = '唔……我的灵觉暂时断开了 (' + err + ')，稍后再试试吧。';
+            chatHistory.push({ role: 'assistant', content: errMsg });
+            appendMsgEl(container, 'assistant', errMsg);
+        } else {
+            chatHistory.push({ role: 'assistant', content: reply });
+            appendMsgEl(container, 'assistant', reply);
+            showFairyBubble(reply);
+        }
+        scrollChatToBottom();
+    });
+}
+
+function handleChatKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+}
+
+/* DeepSeek API 调用 */
+function callDeepSeek(userText, callback) {
+    if (!DS_API_KEY) {
+        setTimeout(function() {
+            var replies = [
+                '嗯……我能感受到你心里的波澜，这个瞬间一定很特别吧？',
+                '让我想想……这张照片里，藏着什么样的故事呢？',
+                '我相信那一定是很珍贵的时刻。你想和我说说吗？',
+                '不用急，慢慢说。每一段回忆都值得被好好倾听。',
+                '我相信，那一定是很珍贵的时刻。想和我多聊聊吗？'
+            ];
+            callback(null, replies[Math.floor(Math.random() * replies.length)]);
+        }, 1200 + Math.random() * 800);
+        return;
+    }
+    fetch(DS_BASE_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + DS_API_KEY
+        },
+        body: JSON.stringify({
+            model: DS_MODEL,
+            messages: chatHistory,
+            max_tokens: 200,
+            temperature: 0.85,
+            stream: false
+        })
+    })
+    .then(function(res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+    })
+    .then(function(data) {
+        var content = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+        content = content.trim();
+        if (!content) callback('空回复', null);
+        else callback(null, content);
+    })
+    .catch(function(err) {
+        // 网络错误时回退到预设回复
+        var fallbackReplies = [
+            '让我想想……这张照片里，藏着什么样的故事呢？',
+            '我相信那一定是很珍贵的时刻。你想和我说说吗？',
+            '不用急，慢慢说。每一段回忆都值得被好好倾听。'
+        ];
+        callback(null, fallbackReplies[Math.floor(Math.random() * fallbackReplies.length)]);
+    });
+}
+
+/* 小精灵气泡 */
+function showFairyBubble(text) {
+    var bubble = document.getElementById('fairy-bubble');
+    bubble.textContent = text.length > 80 ? text.substring(0, 80) + '?' : text;
+    var w = window.innerWidth, h = window.innerHeight;
+    bubble.style.right = 'auto';
+    bubble.style.left = Math.round(w * 0.58) + 'px';
+    bubble.style.top = Math.round(h * 0.35) + 'px';
+    bubble.style.display = 'block';
+    if (fairyBubbleTimer) clearTimeout(fairyBubbleTimer);
+    fairyBubbleTimer = setTimeout(function() { bubble.style.display = 'none'; }, 4500);
+}
+
+function hideFairyBubble() {
+    var bubble = document.getElementById('fairy-bubble');
+    bubble.style.display = 'none';
+    if (fairyBubbleTimer) clearTimeout(fairyBubbleTimer);
+}
+
+/* 人脸检测初始化 - 纯原生摄像头（ml5 在 file:// 下无法使用） */
+function initML5FaceMesh() {
+    if (!video) {
+        document.getElementById('face-indicator').textContent = '灵觉休眠中（本地模式）';
+        return;
+    }
+    // ml5.js 在 file:// 协议下不可用，跳过人脸检测
+    document.getElementById('face-indicator').textContent = '灵觉休眠中（人脸检测不可用）';
+    bFaceSynced = false;
+    predictions = [];
+}
+
+/* DOMContentLoaded 中已处理入口逻辑，此函数已废弃 */
+/*
+function initExperience() {
+    // 检测是否通过 file:// 协议打开（会有功能限制）
+    var isFileProtocol = location.protocol === 'file:';
+    goToPage('page-forest');
+    // 人脸检测：file:// 用 ML5（更兼容），服务器用 MediaPipe
+    document.getElementById('face-indicator').textContent = '等待灵觉苏醒...';
+    if (isFileProtocol) {
+        setTimeout(initML5FaceMesh, 1000);
+    } else {
+        initMediaPipeFaceMesh();
+    }
+}
+*/
+
+/* MediaPipe Face Landmarker 初始化 - 使用新的 Tasks Vision API */
+async function initMediaPipeFaceMesh() {
+    try {
+        // 动态导入 Tasks Vision
+        const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs');
+        
+        const { FaceLandmarker, FilesetResolver, DrawingUtils } = vision;
+        
+        const filesetResolver = await FilesetResolver.forVisionTasks(
+            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+        );
+        
+        faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+            baseOptions: {
+                modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+                delegate: 'GPU'
+            },
+            runningMode: 'VIDEO',
+            numFaces: 1,
+            outputFaceBlendshapes: true,  // 启用 blendshapes 输出
+            outputFacialTransformationMatrixes: false
+        });
+        
+        // 创建隐藏的视频元素
+        mpVideoElement = document.createElement('video');
+        mpVideoElement.style.display = 'none';
+        mpVideoElement.playsInline = true;
+        mpVideoElement.muted = true;
+        document.body.appendChild(mpVideoElement);
+        
+        // 请求摄像头权限并开始
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: 640, height: 480, facingMode: 'user' } 
+        });
+        mpVideoElement.srcObject = stream;
+        await mpVideoElement.play();
+        
+        // 同时把视频流传给预览窗口
+        const previewVideo = document.getElementById('preview-video');
+        if (previewVideo) {
+            previewVideo.srcObject = stream;
+        }
+        
+        // 开始检测循环
+        detectFaceLandmarks();
+        
+        document.getElementById('face-indicator').textContent = '✓ 灵魂同步已建立';
+        bFaceSynced = true;
+        
+    } catch (error) {
+        console.error('Face Landmarker 初始化失败:', error);
+        // 回退到 ml5
+        initML5FaceMesh();
+    }
+}
+
+function detectFaceLandmarks() {
+    if (!faceLandmarker || !mpVideoElement) return;
+    
+    let lastVideoTime = -1;
+    
+    function processFrame() {
+        if (mpVideoElement.currentTime !== lastVideoTime) {
+            const results = faceLandmarker.detectForVideo(mpVideoElement, performance.now());
+            
+            if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+                const landmarks = results.faceLandmarks[0];
+                const blendshapes = results.faceBlendshapes && results.faceBlendshapes.length > 0 
+                    ? results.faceBlendshapes[0] 
+                    : null;
+                
+                analyzeEmotionMP(landmarks, mpVideoElement.videoWidth, mpVideoElement.videoHeight, blendshapes);
+                document.getElementById('face-indicator').textContent = '✓ 灵魂同步已建立';
+                bFaceSynced = true;
+            } else {
+                document.getElementById('face-indicator').textContent = '等待旅人入镜...';
+            }
+            
+            lastVideoTime = mpVideoElement.currentTime;
+        }
+        
+        requestAnimationFrame(processFrame);
+    }
+    
+    processFrame();
+}
+
+/* MediaPipe 表情分析 - 使用 Blendshapes (ML 模型预测的表情系数) */
+function analyzeEmotionMP(landmarks, imgWidth, imgHeight, blendshapes) {
+    
+    // ========== 使用 Blendshapes 数据 (ML 模型预测) ==========
+    if (blendshapes) {
+        // 获取嘴巴相关表情系数
+        var mouthSmile = 0, mouthSmileLeft = 0, mouthSmileRight = 0;
+        var mouthOpen = 0, jawOpen = 0, mouthFunnel = 0, mouthPucker = 0;
+        
+        blendshapes.forEach(function(bs) {
+            var score = bs.score || 0;
+            var name = bs.categoryName || '';
+            
+            switch(name) {
+                case 'mouthSmile': mouthSmile = score; break;
+                case 'mouthSmileLeft': mouthSmileLeft = score; break;
+                case 'mouthSmileRight': mouthSmileRight = score; break;
+                case 'mouthOpen': mouthOpen = score; break;
+                case 'jawOpen': jawOpen = score; break;
+                case 'mouthFunnel': mouthFunnel = score; break;
+                case 'mouthPucker': mouthPucker = score; break;
+                // 开心相关
+                case 'cheekPuff': emotion.cheek = lerp(emotion.cheek || 0, score, 0.2); break;
+            }
+        });
+        
+        // 综合微笑值：左右嘴角 + 整体微笑
+        var avgSmile = (mouthSmileLeft + mouthSmileRight + mouthSmile) / 3;
+        emotion.smile = lerp(emotion.smile, avgSmile, 0.25);
+        
+        // 嘴巴张开程度：mouthOpen + jawOpen
+        var mouthOpenness = Math.max(mouthOpen, jawOpen);
+        emotion.mouth = lerp(emotion.mouth, mouthOpenness, 0.25);
+        
+        // 嘴巴形状：用于区分惊讶和开心
+        // 惊讶：嘴巴大张开，funnel值高(O形)
+        // 开心：funnel值低，嘴角上扬
+        emotion.mouthShape = lerp(emotion.mouthShape || 0, mouthFunnel, 0.2);
+        
+        // 嘟嘴：pucker值高
+        emotion.pucker = lerp(emotion.pucker || 0, mouthPucker, 0.2);
+    }
+    
+    // ========== 同时使用关键点计算 (作为备用/补充) ==========
+    // 关键点定义
+    var mouthTop = landmarks[13], mouthBottom = landmarks[14];
+    var mouthLeft = landmarks[61], mouthRight = landmarks[291];
+    var faceLeft = landmarks[234], faceRight = landmarks[454];
+    var noseTip = landmarks[4];
+    var chin = landmarks[152];
+    
+    // 如果没有 blendshapes，使用关键点计算
+    if (!blendshapes) {
+        // 嘴巴宽高比
+        var mouthHeight = dist2D(mouthTop, mouthBottom);
+        var mouthWidth = dist2D(mouthLeft, mouthRight);
+        var mouthRatio = mouthHeight / mouthWidth;
+        emotion.mouth = lerp(emotion.mouth, map(mouthRatio, 0.05, 0.4, 0, 1), 0.2);
+        emotion.mouth = constrain(emotion.mouth, 0, 1);
+        
+        // 微笑程度（嘴角位置）
+        var avgCornerY = (mouthLeft.y + mouthRight.y) / 2;
+        var faceCenterY = (faceLeft.y + faceRight.y) / 2;
+        var faceCenter = { x: (faceLeft.x + faceRight.x) / 2, y: (faceCenterY) };
+        var cornerRise = (faceCenterY - avgCornerY) / dist2D(noseTip, faceCenter);
+        emotion.smile = lerp(emotion.smile, constrain(map(cornerRise, -0.1, 0.3, 0, 1), 0, 1), 0.2);
+        
+        // 嘴巴张开归一化
+        var mouthOpenness = mouthHeight / dist2D(faceLeft, faceRight);
+        emotion.mouthShape = lerp(emotion.mouthShape || 0, map(mouthOpenness, 0.02, 0.12, 0, 1), 0.2);
+        emotion.mouthShape = constrain(emotion.mouthShape || 0, 0, 1);
+    }
+    
+    // 眼睛睁开程度 (保留关键点计算)
+    var leftEyeTop = landmarks[159], leftEyeBottom = landmarks[145];
+    var rightEyeTop = landmarks[386], rightEyeBottom = landmarks[374];
+    var leftEyeLeft = landmarks[33], leftEyeRight = landmarks[133];
+    var rightEyeLeft = landmarks[362], rightEyeRight = landmarks[263];
+    
+    var leftEyeH = dist2D(leftEyeTop, leftEyeBottom);
+    var leftEyeW = dist2D(leftEyeLeft, leftEyeRight);
+    var rightEyeH = dist2D(rightEyeTop, rightEyeBottom);
+    var rightEyeW = dist2D(rightEyeLeft, rightEyeRight);
+    var avgEyeRatio = (leftEyeH / leftEyeW + rightEyeH / rightEyeW) / 2;
+    emotion.eye = lerp(emotion.eye, map(avgEyeRatio, 0.15, 0.45, 0, 1), 0.2);
+    emotion.eye = constrain(emotion.eye, 0, 1);
+    
+    // 位置信息
+    var faceCenter = landmarks[1];
+    emotion.x = (1 - faceCenter.x) * width;
+    emotion.y = faceCenter.y * height;
+    
+    // 更新情绪历史
+    emotionHistory.push({
+        smile: emotion.smile,
+        mouth: emotion.mouth,
+        mouthShape: emotion.mouthShape || 0,
+        eye: emotion.eye,
+        timestamp: Date.now()
+    });
+    if (emotionHistory.length > 30) emotionHistory.shift();
+    
+    var now = Date.now();
+    if (now - lastEmotionUpdate > 2000) {
+        lastEmotionUpdate = now;
+        checkEmotionChange();
+    }
+}
+
+function map(val, start1, stop1, start2, stop2) {
+    return start2 + (stop2 - start2) * ((val - start1) / (stop1 - start1));
+}
+
+/* ml5 表情分析（备用） */
+function analyzeEmotionML5(p) {
+    var k = p.keypoints;
+    if (!k) return;
+    var dMouth = dist(k[13].x, k[13].y, k[14].x, k[14].y);
+    emotion.mouth = lerp(emotion.mouth, dMouth > 15 ? 1 : 0, 0.18);
+    var dSmile = dist(k[61].x, k[61].y, k[291].x, k[291].y);
+    emotion.smile = lerp(emotion.smile, dSmile > 115 ? 1 : 0, 0.10);
+    emotion.x = k[1].x;
+    emotion.y = k[1].y;
+    
+    emotionHistory.push({
+        smile: emotion.smile,
+        mouth: emotion.mouth,
+        timestamp: Date.now()
+    });
+    if (emotionHistory.length > 30) emotionHistory.shift();
+    
+    var now = Date.now();
+    if (now - lastEmotionUpdate > 3000) {
+        lastEmotionUpdate = now;
+        checkEmotionChange();
+    }
+}
+
+/* 2D 距离计算 */
+function dist2D(a, b) {
+    return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
+}
+
+/* 获取当前情绪类型 - 以嘴部为主的识别 */
+function getEmotionType() {
+    if (emotionHistory.length < 3) return null;
+    
+    var recent = emotionHistory.slice(-8);
+    var avgSmile = 0, avgMouth = 0, avgMouthShape = 0;
+    for (var i = 0; i < recent.length; i++) {
+        avgSmile += recent[i].smile || 0;
+        avgMouth += recent[i].mouth || 0;
+        avgMouthShape += recent[i].mouthShape || recent[i].mouth || 0;
+    }
+    avgSmile /= recent.length;
+    avgMouth /= recent.length;
+    avgMouthShape /= recent.length;
+    
+    var type = 'neutral';
+    var detail = '表情平静';
+    var intensity = 0;
+    
+    // ===== 嘴部为主的情绪判断 =====
+    
+    // 惊讶: 嘴巴大张开 (O形)，mouth值和mouthShape值都很高
+    if (avgMouth > 0.6 && avgMouthShape > 0.5) {
+        type = 'surprised';
+        detail = '表情惊讶';
+        intensity = Math.min(1, (avgMouth + avgMouthShape) / 2);
+    }
+    // 开心: 嘴角上扬明显 (smile高)，嘴巴微微张开或不张开
+    else if (avgSmile > 0.4) {
+        type = 'happy';
+        detail = '正在微笑';
+        intensity = avgSmile;
+    }
+    // 微微笑: 嘴角有一定上扬
+    else if (avgSmile > 0.25) {
+        type = 'happy';
+        detail = '嘴角上扬';
+        intensity = avgSmile * 0.8;
+    }
+    // 张嘴说话/嘟嘴: mouth值中等
+    else if (avgMouth > 0.3) {
+        type = 'neutral';
+        detail = '表情平静';
+        intensity = 0.3;
+    }
+    // 中性
+    else {
+        type = 'neutral';
+        detail = '表情平静';
+        intensity = 0.2;
+    }
+    
+    return { type: type, intensity: intensity, detail: detail };
+}
+    
+/* 情绪趋势检测与反馈 */
+function checkEmotionChange() {
+    var currentEmotion = getEmotionType();
+    if (!currentEmotion) return;
+    
+    if (lastEmotionType && lastEmotionType !== currentEmotion.type && currentEmotion.intensity > 0.3) {
+        triggerEmotionFeedback(currentEmotion);
+    }
+    lastEmotionType = currentEmotion.type;
+}
+
+/* 根据情绪触发反馈 */
+function triggerEmotionFeedback(emotionData) {
+    var messages = {
+        happy: [
+            '好开心呀~ 你的笑容真美',
+            '感受到你的快乐了~ 这笑容让森林都温暖起来',
+            '你的笑容像阳光一样照亮了森林~'
+        ],
+        surprised: [
+            '哦~ 是什么让你这么惊讶?',
+            '惊讶的表情好可爱~',
+            '看到什么新奇的东西了吗?'
+        ],
+        angry: [
+            '感受到你有些生气...',
+            '深呼吸~ 森林会陪你静下来',
+            '有什么烦心事吗?'
+        ],
+        sad: [
+            '感受到你有些难过...',
+            '森林会在这里陪着你',
+            '想和我聊聊吗?'
+        ],
+        neutral: [
+            '我在感受你的心绪~',
+            '森林在静静守望~'
+        ]
+    };
+    
+    var arr = messages[emotionData.type] || messages.neutral;
+    var msg = arr[Math.floor(Math.random() * arr.length)];
+    
+    if (!chatOpen) {
+        showFairyBubble(msg);
+    }
+}
+
+/* ?AI????????? */
+function getEmotionContext() {
+    var current = getEmotionType();
+    if (!current) return '';
+    return '用户当前' + current.detail + '，情绪强度' + Math.round(current.intensity * 100) + '%，可参考此情绪状态回复';
+}
+
+function setup() {
+    var canvas = createCanvas(windowWidth, windowHeight);
+    canvas.parent('canvas-holder');
+    canvas.style('display', 'block');
+    for (var i = 0; i < 32; i++) {
+        var p = getPatternPos(i, 32);
+        trees.push(new MemoryTree(p.x, p.y, i));
+    }
+    fairy = new SuperFairy();
+}
+
+function getPatternPos(i, n) {
+    return PATTERNS[currentPatternIndex].func(i, n);
+}
+
+function draw() {
+    background(THEME.bg[0], THEME.bg[1], THEME.bg[2]);
+    drawForestBackground();
+    for (var i = 0; i < trees.length; i++) { trees[i].update(); trees[i].display(); }
+    fairy.update();
+    fairy.display();
+    updateMemoryBubble();
+    drawEmotionDebug();
+}
+
+// 情绪调试面板
+function drawEmotionDebug() {
+    push();
+    // 左上角显示
+    fill(0, 0, 0, 200);
+    noStroke();
+    rect(10, 10, 240, 130, 8);
+    
+    fill(100, 255, 150);
+    textSize(11);
+    textAlign(LEFT, TOP);
+    text('[ Face Landmarker 表情检测 ]', 18, 16);
+    
+    fill(255);
+    text('smile: ' + emotion.smile.toFixed(2), 18, 34);
+    text('mouthOpen: ' + emotion.mouth.toFixed(2), 18, 48);
+    text('mouthFunnel: ' + (emotion.mouthShape || 0).toFixed(2), 18, 62);
+    text('mouthPucker: ' + (emotion.pucker || 0).toFixed(2), 18, 76);
+    text('eyeOpen: ' + emotion.eye.toFixed(2), 130, 34);
+    
+    var current = getEmotionType();
+    if (current) {
+        fill(100, 255, 150);
+        text('表情: ' + current.type + ' (' + current.detail + ')', 18, 96);
+        text('强度: ' + (current.intensity * 100).toFixed(0) + '%', 18, 112);
+    } else {
+        fill(180);
+        text('表情: 等待检测...', 18, 96);
+    }
+    pop();
+}
+
+function drawForestBackground() {
+    // ????????
+    for (var i = 0; i < height; i += 3) {
+        var g = map(i, 0, height, 3, 18);
+        stroke(0, g, 0);
+        strokeWeight(4);
+        line(0, i, width, i);
+    }
+    
+    // ??????????????
+    if (frameCount % 8 === 0 && fireflies.length < 25) {
+        fireflies.push({
+            x: random(width),
+            y: random(height * 0.5, height),
+            vx: random(-0.3, 0.3),
+            vy: random(-0.2, 0.1),
+            a: random(100, 200),
+            phase: random(TWO_PI),
+            r: random(2, 4)
+        });
+    }
+    for (var f = fireflies.length - 1; f >= 0; f--) {
+        var ff = fireflies[f];
+        ff.x += ff.vx + sin(frameCount * 0.02 + ff.phase) * 0.3;
+        ff.y += ff.vy;
+        ff.a += random(-5, 5);
+        ff.a = constrain(ff.a, 50, 220);
+        noStroke();
+        fill(180, 255, 150, ff.a);
+        ellipse(ff.x, ff.y, ff.r);
+        fill(255, 255, 200, ff.a * 0.5);
+        ellipse(ff.x, ff.y, ff.r * 0.4);
+        if (ff.y < -20 || ff.a < 60) fireflies.splice(f, 1);
+    }
+    
+    // ????????
+    if (frameCount % 12 === 0) {
+        snowflakes.push({ x: random(width), y: -10, vy: random(0.6, 1.8), a: 180, r: random(1.2, 2.8) });
+    }
+    for (var j = snowflakes.length - 1; j >= 0; j--) {
+        var s = snowflakes[j];
+        s.y += s.vy; s.a -= 1.2;
+        noStroke();
+        fill(200, 255, 210, s.a);
+        ellipse(s.x, s.y, s.r);
+        if (s.a <= 0) snowflakes.splice(j, 1);
+    }
+    
+    // ????
+    noStroke();
+    for (var m = 0; m < 3; m++) {
+        var fogY = height - 30 + sin(frameCount * 0.01 + m) * 10;
+        var fogAlpha = 15 + sin(frameCount * 0.015 + m * 2) * 8;
+        fill(100, 150, 80, fogAlpha);
+        ellipse(width / 2 + m * 200, fogY, 400, 40);
+    }
+}
+
+const PATTERNS = [
+    {
+        name: "????",
+        func: function(i, n) {
+            return {
+                x: map(i % 8, 0, 7, width * 0.06, width * 0.94),
+                y: map(Math.floor(i / 8), 0, Math.ceil(n / 8) - 1, height * 0.08, height * 0.90)
+            };
+        }
+    },
+    {
+        name: "????",
+        func: function(i, n) {
+            var a = i * 0.55;
+            var r = i * (Math.min(width, height) * 0.28 / n);
+            return { x: width / 2 + Math.cos(a) * r, y: height / 2 + Math.sin(a) * r };
+        }
+    },
+    {
+        name: "????",
+        func: function(i, n) {
+            var col = i % 6, row = Math.floor(i / 6);
+            return { x: map(col, 0, 5, width * 0.1, width * 0.9), y: map(row, 0, Math.ceil(n / 6), height * 0.12, height * 0.88) };
+        }
+    }
+];
+
+function MemoryTree(x, y, id) {
+    this.id = id;
+    this.pos = createVector(x, y);
+    this.target = createVector(x, y);
+    this.height = random(160, 260);
+    this.bw = this.height * 0.52;
+    this.leafClr = random(THEME.forest);
+    this.starClr = random(THEME.glow);
+    this.glowing = false;
+    this.glowProg = 0;
+    this.memory = null;
+    this.needles = [];
+    var layers = 5;
+    for (var l = 0; l < layers; l++) {
+        var layerY = (l / layers) * this.height;
+        var layerMaxW = map(l, 0, layers, this.bw, 10);
+        var count = Math.round(map(l, 0, layers, 36, 10));
+        for (var n = 0; n < count; n++) {
+            this.needles.push({ relX: random(-layerMaxW / 2, layerMaxW / 2), relY: -layerY, size: random(4, 10), depth: random(0.6, 1.3), phase: random(TWO_PI) });
+        }
+    }
+}
+
+MemoryTree.prototype.update = function() {
+    this.pos.x = lerp(this.pos.x, this.target.x, 0.04);
+    this.pos.y = lerp(this.pos.y, this.target.y, 0.04);
+    if (this.glowing) this.glowProg = lerp(this.glowProg, 1, 0.10);
+};
+
+MemoryTree.prototype.display = function() {
+    push();
+    translate(this.pos.x, this.pos.y);
+    fill(18, 8, 2); noStroke(); rect(-5, -14, 10, 24);
+    for (var i = 0; i < this.needles.length; i++) {
+        var n = this.needles[i];
+        var sway = sin(frameCount * 0.018 + n.phase) * 2.5;
+        var c = color(this.leafClr);
+        if (this.glowing) c = lerpColor(c, color(this.starClr), this.glowProg);
+        var bright = map(n.depth, 0.6, 1.3, 0.75, 1.35);
+        push();
+        scale(n.depth);
+        fill(red(c) * bright, green(c) * bright, blue(c) * bright);
+        translate(n.relX + sway, n.relY);
+        rotate(n.phase);
+        triangle(-n.size / 2, n.size / 2, n.size / 2, n.size / 2, 0, -n.size);
+        pop();
+    }
+    if (this.memory) this.displayMemoryRing();
+    if (this.glowing) {
+        drawingContext.shadowBlur = 28 * this.glowProg;
+        drawingContext.shadowColor = this.starClr;
+        fill(255, 255, 190);
+        ellipse(0, -this.height - 8, 11 * this.glowProg);
+        drawingContext.shadowBlur = 0;
+    }
+    pop();
+};
+
+MemoryTree.prototype.displayMemoryRing = function() {
+    noFill();
+    stroke(this.starClr);
+    strokeWeight(1);
+    var r = 22 + sin(frameCount * 0.1) * 5;
+    ellipse(0, -this.height / 2, r, r / 2);
+    fill(this.starClr); noStroke();
+    ellipse(Math.cos(frameCount * 0.05) * r / 2, -this.height / 2 + Math.sin(frameCount * 0.05) * r / 4, 4);
+};
+
+/* ===================== ???? SuperFairy ===================== */
+function SuperFairy() {
+    this.pos = createVector(width / 2, height / 2);
+    this.vel = createVector(0, 0);
+    this.target = createVector(width / 2, height / 2);
+    this.pulse = 0;
+    this.wingPhase = 0;
+    this.skirtPhase = 0;
+    this.antennaPhase = 0;
+    this.trail = [];
+    this.dustParticles = [];
+    this.sparkles = [];
+    this.currentEmotion = 'neutral';
+    this.emotionGlow = { r: 136, g: 255, b: 175 };
+    
+    // 创建精灵光点
+    for (var i = 0; i < 16; i++) {
+        this.sparkles.push({
+            angle: (TWO_PI / 16) * i,
+            radius: random(28, 48),
+            size: random(1.5, 4),
+            phase: random(TWO_PI),
+            speed: random(0.008, 0.025)
+        });
+    }
+}
+
+SuperFairy.prototype.update = function() {
+    // ????
+    if (predictions.length > 0) {
+        this.target.x = map(emotion.x, 0, 640, width, 0);
+        this.target.y = map(emotion.y, 0, 480, 0, height);
+        // ??????????
+        var em = getEmotionType();
+        if (em) {
+            this.currentEmotion = em.type;
+            if (em.type === 'happy') {
+                this.emotionGlow = { r: 255, g: 220, b: 100 };
+            } else if (em.type === 'calm') {
+                this.emotionGlow = { r: 136, g: 255, b: 220 };
+            } else if (em.type === 'curious') {
+                this.emotionGlow = { r: 200, g: 180, b: 255 };
+            } else {
+                this.emotionGlow = { r: 136, g: 255, b: 175 };
+            }
+        }
+    } else {
+        this.target.x = mouseX;
+        this.target.y = mouseY;
+    }
+    
+    // ????
+    var force = p5.Vector.sub(this.target, this.pos).mult(0.08);
+    this.vel.add(force).mult(0.86);
+    this.pos.add(this.vel);
+    
+    // ??????
+    this.pulse += 0.12;
+    this.wingPhase += 0.32;
+    this.skirtPhase += 0.06;
+    this.antennaPhase += 0.15;
+    
+    // ??
+    this.trail.push({
+        x: this.pos.x,
+        y: this.pos.y,
+        age: 0
+    });
+    if (this.trail.length > 60) this.trail.shift();
+    for (var t = 0; t < this.trail.length; t++) {
+        this.trail[t].age++;
+    }
+    
+    // ????
+    if (random() < 0.2) {
+        this.dustParticles.push({
+            x: this.pos.x + random(-18, 18),
+            y: this.pos.y + random(-18, 18),
+            vx: random(-0.8, 0.8),
+            vy: random(-1.2, -0.2),
+            life: 70,
+            maxLife: 70,
+            size: random(2, 5)
+        });
+    }
+    for (var d = this.dustParticles.length - 1; d >= 0; d--) {
+        var dp = this.dustParticles[d];
+        dp.x += dp.vx;
+        dp.y += dp.vy;
+        dp.life--;
+        if (dp.life <= 0) this.dustParticles.splice(d, 1);
+    }
+    
+    // ????
+    for (var s = 0; s < this.sparkles.length; s++) {
+        this.sparkles[s].angle += this.sparkles[s].speed;
+    }
+};
+
+SuperFairy.prototype.display = function() {
+    var g = this.emotionGlow;
+    var glowColor = 'rgb(' + g.r + ',' + g.g + ',' + g.b + ')';
+    
+    // Layer 1: ??????    this.drawOuterGlow(g);
+    
+    // Layer 2: ???
+    this.drawWing(-1, g);
+    
+    // Layer 3: ????
+    this.drawDustParticles(g);
+    
+    // Layer 4: ??/????
+    this.drawSkirt(g);
+    
+    // Layer 5: ????
+    this.drawBodyCore(g);
+    
+    // Layer 6: ??
+    this.drawHead(g);
+    
+    // Layer 7: ??
+    this.drawAntennae(g);
+    
+    // Layer 8: ???
+    this.drawWing(1, g);
+    
+    // Layer 9: ????
+    this.drawSparkles(g);
+    
+    // Layer 10: ??
+    this.drawTrail(g);
+};
+
+SuperFairy.prototype.drawOuterGlow = function(g) {
+    push();
+    noStroke();
+    var glowSize = 100 + sin(this.pulse * 0.5) * 15;
+    for (var i = 6; i > 0; i--) {
+        fill(g.r, g.g, g.b, 4 * i);
+        ellipse(this.pos.x, this.pos.y, glowSize * i * 0.35);
+    }
+    pop();
+};
+
+SuperFairy.prototype.drawWing = function(side, g) {
+    push();
+    translate(this.pos.x, this.pos.y);
+    
+    var wingConfigs = side === -1 ? [
+        { rot: -1.2, scale: 0.75, offsetX: -5, offsetY: -2 },
+        { rot: -0.5, scale: 0.9, offsetX: -3, offsetY: 3 }
+    ] : [
+        { rot: 0.5, scale: 0.9, offsetX: 3, offsetY: 3 },
+        { rot: 1.2, scale: 0.75, offsetX: 5, offsetY: -2 }
+    ];
+    
+    for (var w = 0; w < wingConfigs.length; w++) {
+        var cfg = wingConfigs[w];
+        var flapAmount = sin(this.wingPhase + w * 0.5) * 0.35;
+        
+        push();
+        rotate(cfg.rot + flapAmount);
+        scale(cfg.scale, cfg.scale * 0.55);
+        
+        noStroke();
+        fill(g.r, g.g, g.b, 70);
+        beginShape();
+        vertex(0, 0);
+        bezierVertex(18, -22, 42, -18, 48, 0);
+        bezierVertex(42, 18, 18, 22, 0, 0);
+        endShape(CLOSE);
+        
+        fill(255, 255, 255, 40);
+        beginShape();
+        vertex(2, -2);
+        bezierVertex(14, -14, 34, -12, 38, -2);
+        bezierVertex(24, 4, 10, 6, 2, -2);
+        endShape(CLOSE);
+        
+        stroke(g.r, g.g, g.b, 90);
+        strokeWeight(0.5);
+        line(0, 0, 36, -2);
+        line(15, -5, 25, -15);
+        line(20, -2, 28, -10);
+        
+        pop();
+    }
+    pop();
+};
+
+SuperFairy.prototype.drawSkirt = function(g) {
+    push();
+    translate(this.pos.x, this.pos.y + 8);
+    
+    noStroke();
+    var petalCount = 6;
+    for (var p = 0; p < petalCount; p++) {
+        var angle = (TWO_PI / petalCount) * p + this.skirtPhase;
+        var sway = sin(this.skirtPhase * 2.5 + p) * 4;
+        var px = cos(angle) * (10 + sway);
+        var py = sin(angle) * 5 + 8;
+        
+        fill(g.r, g.g, g.b, 75);
+        ellipse(px, py, 10, 14);
+        
+        fill(255, 255, 255, 25);
+        ellipse(px - 1, py - 3, 5, 7);
+    }
+    pop();
+};
+
+SuperFairy.prototype.drawBodyCore = function(g) {
+    push();
+    translate(this.pos.x, this.pos.y);
+    
+    var glowColor = 'rgb(' + g.r + ',' + g.g + ',' + g.b + ')';
+    drawingContext.shadowBlur = 45;
+    drawingContext.shadowColor = glowColor;
+    
+    noStroke();
+    var coreSize = 16 + sin(this.pulse) * 2.5;
+    
+    fill(g.r, g.g, g.b, 100);
+    ellipse(0, 4, coreSize * 1.3, coreSize * 1.5);
+    
+    fill(g.r + 30, g.g + 20, g.b + 20, 180);
+    ellipse(0, 2, coreSize, coreSize * 1.2);
+    
+    fill(255, 255, 255, 230);
+    ellipse(-2, -1, coreSize * 0.5, coreSize * 0.6);
+    
+    drawingContext.shadowBlur = 0;
+    pop();
+};
+
+SuperFairy.prototype.drawHead = function(g) {
+    push();
+    translate(this.pos.x, this.pos.y - 3);
+    
+    noStroke();
+    
+    fill(g.r, g.g, g.b, 200);
+    ellipse(0, -10, 18, 20);
+    
+    fill(255, 255, 255, 190);
+    ellipse(-2, -14, 9, 11);
+    
+    fill(255, 180, 160, 45);
+    ellipse(-5, -6, 6, 4);
+    ellipse(5, -6, 6, 4);
+    
+    fill(30, 50, 40);
+    ellipse(-3, -11, 4, 5);
+    ellipse(3, -11, 4, 5);
+    
+    fill(255, 255, 255, 235);
+    ellipse(-2, -12, 2.5, 2.5);
+    ellipse(4, -12, 2.5, 2.5);
+    
+    noFill();
+    stroke(30, 50, 40);
+    strokeWeight(1);
+    arc(0, -6, 7, 5, 0.2, PI - 0.2);
+    
+    pop();
+};
+
+SuperFairy.prototype.drawAntennae = function(g) {
+    push();
+    translate(this.pos.x, this.pos.y - 14);
+    
+    var wiggle = sin(this.antennaPhase) * 0.2;
+    
+    stroke(g.r, g.g, g.b, 160);
+    strokeWeight(1);
+    noFill();
+    beginShape();
+    vertex(-3, -5);
+    bezierVertex(-6 + wiggle * 4, -14, -10 + wiggle * 6, -20, -8 + wiggle * 5, -26);
+    endShape();
+    
+    noStroke();
+    fill(255, 255, 255, 210);
+    ellipse(-8 + wiggle * 5, -26, 5, 5);
+    fill(g.r, g.g, g.b, 120);
+    ellipse(-8 + wiggle * 5, -26, 7, 7);
+    
+    stroke(g.r, g.g, g.b, 160);
+    strokeWeight(1);
+    noFill();
+    beginShape();
+    vertex(3, -5);
+    bezierVertex(6 - wiggle * 4, -14, 10 - wiggle * 6, -20, 8 - wiggle * 5, -26);
+    endShape();
+    
+    noStroke();
+    fill(255, 255, 255, 210);
+    ellipse(8 - wiggle * 5, -26, 5, 5);
+    fill(g.r, g.g, g.b, 120);
+    ellipse(8 - wiggle * 5, -26, 7, 7);
+    
+    pop();
+};
+
+SuperFairy.prototype.drawSparkles = function(g) {
+    push();
+    for (var i = 0; i < this.sparkles.length; i++) {
+        var s = this.sparkles[i];
+        var sx = this.pos.x + cos(s.angle) * s.radius;
+        var sy = this.pos.y + sin(s.angle) * s.radius * 0.55;
+        var twinkle = (sin(this.pulse * 0.12 + s.phase) + 1) * 0.5;
+        var alpha = 120 + twinkle * 120;
+        var size = s.size * (0.4 + twinkle * 0.6);
+        
+        noStroke();
+        fill(g.r, g.g, g.b, alpha);
+        ellipse(sx, sy, size, size);
+        fill(255, 255, 255, alpha * 0.85);
+        ellipse(sx, sy, size * 0.35, size * 0.35);
+    }
+    pop();
+};
+
+SuperFairy.prototype.drawDustParticles = function(g) {
+    push();
+    noStroke();
+    for (var i = 0; i < this.dustParticles.length; i++) {
+        var dp = this.dustParticles[i];
+        var alpha = map(dp.life, 0, dp.maxLife, 0, 180);
+        fill(g.r, g.g, g.b, alpha);
+        ellipse(dp.x, dp.y, dp.size * (dp.life / dp.maxLife));
+        fill(255, 255, 255, alpha * 0.6);
+        ellipse(dp.x, dp.y, dp.size * 0.3 * (dp.life / dp.maxLife));
+    }
+    pop();
+};
+
+SuperFairy.prototype.drawTrail = function(g) {
+    push();
+    noStroke();
+    for (var i = 0; i < this.trail.length; i++) {
+        var p = this.trail[i];
+        var progress = i / this.trail.length;
+        var fadeAlpha = progress * progress * 180;
+        var size = progress * 10;
+        
+        fill(g.r, g.g, g.b, fadeAlpha);
+        ellipse(p.x, p.y, size, size);
+        
+        if (i % 4 === 0) {
+            fill(255, 255, 255, fadeAlpha * 0.5);
+            ellipse(p.x, p.y, size * 0.25, size * 0.25);
+        }
+    }
+    pop();
+};
+
+function mousePressed() {
+    if (!document.getElementById('page-forest').classList.contains('active')) return;
+    for (var i = 0; i < trees.length; i++) {
+        var t = trees[i];
+        if (dist(mouseX, mouseY, t.pos.x, t.pos.y - t.height / 2) < 90) {
+            if (!t.memory) captureMemoryForTree(t);
+            else t.glowProg = 0.5;
+            break;
+        }
+    }
+}
+
+function updateMemoryBubble() {
+    var found = false;
+    var bubble = document.getElementById('memory-bubble');
+    var img = document.getElementById('bubble-img');
+    for (var i = 0; i < trees.length; i++) {
+        var t = trees[i];
+        if (t.memory && dist(mouseX, mouseY, t.pos.x, t.pos.y - t.height / 2) < 85) {
+            bubble.style.display = 'block';
+            bubble.style.left = (t.pos.x - 75) + 'px';
+            bubble.style.top = (t.pos.y - t.height - 100) + 'px';
+            img.src = t.memory.img;
+            found = true;
+            break;
+        }
+    }
+    if (!found) bubble.style.display = 'none';
+}
+
+function captureMemoryForTree(tree) {
+    var flash = document.getElementById('flash');
+    flash.style.opacity = '1';
+    setTimeout(function() { flash.style.opacity = '0'; }, 140);
+
+    var hasVideo = (video && video.elt && video.elt.srcObject) || (mpVideoElement && mpVideoElement.srcObject);
+    var dataUrl = null;
+    var currentEmotion = getEmotionType();
+
+    if (hasVideo) {
+        // 用原生 Canvas API 截取摄像头帧，避免 p5.image() 的兼容性问题
+        var capCanvas = document.createElement('canvas');
+        capCanvas.width = 640; capCanvas.height = 480;
+        var capCtx = capCanvas.getContext('2d');
+        var vidEl = mpVideoElement && mpVideoElement.srcObject ? mpVideoElement : (video && video.elt);
+        if (vidEl) {
+            capCtx.translate(640, 0); capCtx.scale(-1, 1);
+            capCtx.drawImage(vidEl, 0, 0, 640, 480);
+            capCtx.setTransform(1, 0, 0, 1, 0, 0);
+            capCtx.fillStyle = 'rgba(162,255,175,0.18)';
+            capCtx.fillRect(0, 0, 640, 480);
+        }
+        dataUrl = capCanvas.toDataURL('image/png');
+    } else {
+        var p5canvas = document.querySelector('#canvas-holder canvas');
+        if (p5canvas) {
+            var dc = document.createElement('canvas');
+            dc.width = 640; dc.height = 480;
+            var dctx = dc.getContext('2d');
+            dctx.translate(640, 0); dctx.scale(-1, 1);
+            dctx.drawImage(p5canvas, 0, 0, 640, 480);
+            dctx.setTransform(1, 0, 0, 1, 0, 0);
+            dctx.fillStyle = 'rgba(162,255,175,0.18)';
+            dctx.fillRect(0, 0, 640, 480);
+            dataUrl = dc.toDataURL('image/png');
+        } else {
+            var pg2 = createGraphics(640, 480);
+            for (var y = 0; y < 480; y++) {
+                pg2.stroke(0, pg2.map(y, 0, 480, 8, 25), 0, 30);
+                pg2.strokeWeight(1);
+                pg2.line(0, y, 640, y);
+            }
+            pg2.noStroke();
+            pg2.fill(162, 255, 175, 60);
+            pg2.textAlign(pg2.CENTER, pg2.CENTER);
+            pg2.textSize(16);
+            pg2.text('在光与苔之间', 320, 230);
+            pg2.textSize(13);
+            pg2.fill(162, 255, 175, 100);
+            pg2.text('记忆已存入森林', 320, 260);
+            pg2.loadPixels(); pg2.updatePixels();
+            dataUrl = pg2.canvas.toDataURL('image/png');
+        }
+    }
+
+    if (!dataUrl) return;
+
+    var memoryData = {
+        id: tree.id,
+        img: dataUrl,
+        time: new Date().toLocaleTimeString('zh-CN'),
+        rotation: random(-5, 5),
+        emotion: currentEmotion ? currentEmotion.type : 'neutral'
+    };
+    tree.memory = memoryData;
+    tree.glowing = true;
+    memories.unshift(memoryData);
+
+    try {
+        var maxStored = 5;
+        var storedMemories = JSON.parse(localStorage.getItem('rhizome_memories') || '[]');
+        storedMemories.unshift(memoryData);
+        if (storedMemories.length > maxStored) storedMemories = storedMemories.slice(0, maxStored);
+        localStorage.setItem('rhizome_memories', JSON.stringify(storedMemories));
+    } catch(e) {
+        try { localStorage.removeItem('rhizome_memories'); localStorage.setItem('rhizome_memories', JSON.stringify(memories.slice(0, 3))); } catch(e2) {}
+    }
+
+    updateArchiveUI();
+
+    if (!isGenerating) {
+        var replies = ['这片森林感受到了你的心意~', '种子已经种下，会慢慢生根发芽~', '又一颗记忆的种子在森林中生长~'];
+        showFairyBubble(replies[Math.floor(random(replies.length))]);
+    }
+}
+
+/* 从相册上传照片到最近的空树 */
+function handlePhotoUpload(input) {
+    if (!input.files || !input.files[0]) return;
+    var file = input.files[0];
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        var dataUrl = e.target.result;
+        // 找第一棵没有记忆的树
+        var targetTree = null;
+        for (var i = 0; i < trees.length; i++) {
+            if (!trees[i].memory) { targetTree = trees[i]; break; }
+        }
+        if (!targetTree) {
+            // 所有树都已满，使用第一棵（会覆盖旧记忆）
+            targetTree = trees[0];
+        }
+        // 模拟闪光效果
+        var flash = document.getElementById('flash');
+        flash.style.opacity = '1';
+        setTimeout(function() { flash.style.opacity = '0'; }, 140);
+        // 直接设置记忆
+        var currentEmotion = getEmotionType();
+        var memoryData = {
+            id: targetTree.id,
+            img: dataUrl,
+            time: new Date().toLocaleTimeString('zh-CN'),
+            rotation: random(-5, 5),
+            emotion: currentEmotion ? currentEmotion.type : 'neutral'
+        };
+        targetTree.memory = memoryData;
+        targetTree.glowing = true;
+        memories.unshift(memoryData);
+        updateArchiveUI();
+        // 回复
+        if (!isGenerating) {
+            showFairyBubble('这张照片已被森林珍藏~ 会慢慢生根发芽~');
+        }
+    };
+    reader.readAsDataURL(file);
+    input.value = '';
+}
+
+function updateArchiveUI() {
+    var container = document.getElementById('archive-container');
+    container.innerHTML = '';
+    for (var i = 0; i < memories.length; i++) {
+        var m = memories[i];
+        var el = document.createElement('div');
+        el.className = 'memory-photo';
+        el.style.setProperty('--r', m.rotation.toFixed(1) + 'deg');
+        el.innerHTML = '<img src="' + m.img + '" alt="?? #' + m.id + ' ???" /><div class="photo-label">?? #' + m.id + ' ??? � ' + m.time + '</div>';
+        container.appendChild(el);
+    }
+}
+
+function applyPattern(idx) {
+    currentPatternIndex = idx;
+    document.getElementById('pattern-name').textContent = PATTERNS[idx].name;
+    for (var i = 0; i < trees.length; i++) {
+        var p = PATTERNS[idx].func(i, trees.length);
+        trees[i].target.x = p.x;
+        trees[i].target.y = p.y;
+    }
+}
+
+function nextPattern() { applyPattern((currentPatternIndex + 1) % PATTERNS.length); }
+function prevPattern() { applyPattern((currentPatternIndex - 1 + PATTERNS.length) % PATTERNS.length); }
+
+function goToPage(id) {
+    var pages = document.querySelectorAll('.page');
+    for (var i = 0; i < pages.length; i++) pages[i].classList.remove('active');
+    document.getElementById(id).classList.add('active');
+}
+
+// ===== 回忆轨迹弹窗 =====
+var trailInstance = null;
+
+function openTrailModal() {
+    if (memories.length === 0) {
+        alert('还没有拍摄回忆哦~ 先去森林里拍几张吧~');
+        return;
+    }
+    
+    var modal = document.getElementById('trail-modal');
+    modal.classList.add('active');
+    
+    var debugEl = document.getElementById('trail-debug');
+    debugEl.textContent = '✅ 加载了 ' + memories.length + ' 张回忆照片';
+    
+    // 创建粒子
+    var particlesContainer = document.getElementById('trail-particles');
+    particlesContainer.innerHTML = '';
+    for (var i = 0; i < 50; i++) {
+        var p = document.createElement('div');
+        p.className = 'trail-particle';
+        p.style.left = Math.random() * 100 + '%';
+        p.style.top = Math.random() * 100 + '%';
+        p.style.animationDelay = Math.random() * 8 + 's';
+        particlesContainer.appendChild(p);
+    }
+    
+    // 初始化轨迹效果
+    if (trailInstance) trailInstance.stop();
+    var content = document.getElementById('trail-content');
+    content.innerHTML = '';
+    trailInstance = new TrailEffect(content, memories.map(m => m.img));
+}
+
+function closeTrailModal() {
+    document.getElementById('trail-modal').classList.remove('active');
+    if (trailInstance) trailInstance.stop();
+}
+
+// ===== 回忆轨迹效果类 =====
+function TrailEffect(container, images) {
+    var self = this;
+    this.container = container;
+    this.images = [];
+    this.imagesTotal = 0;
+    this.pos = 0;
+    this.zIndexVal = 1;
+    this.activeImagesCount = 0;
+    this.isIdle = true;
+    this.threshold = 80;
+    this.mousePos = { x: 0, y: 0 };
+    this.lastMousePos = { x: 0, y: 0 };
+    this.cacheMousePos = { x: 0, y: 0 };
+    this.running = true;
+
+    // 创建 DOM 结构（参考 ImageItem）
+    this.images = images.map(function(url) {
+        var div = document.createElement('div');
+        div.className = 'trail-photo';
+        var inner = document.createElement('div');
+        inner.className = 'trail-photo-inner';
+        inner.style.backgroundImage = 'url(' + url + ')';
+        div.appendChild(inner);
+        container.appendChild(div);
+        return { el: div, inner: inner, rect: null };
+    });
+    this.imagesTotal = this.images.length;
+
+    // 初始化时计算 rect
+    this.images.forEach(function(img) {
+        img.rect = img.el.getBoundingClientRect();
+    });
+
+    container.addEventListener('mousemove', function(e) {
+        var rect = container.getBoundingClientRect();
+        self.mousePos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    });
+
+    container.addEventListener('touchmove', function(e) {
+        if (e.touches.length > 0) {
+            var rect = container.getBoundingClientRect();
+            self.mousePos = { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+        }
+    });
+
+    function initRender(e) {
+        var rect = container.getBoundingClientRect();
+        self.mousePos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        self.cacheMousePos = { x: self.mousePos.x, y: self.mousePos.y };
+        requestAnimationFrame(function() { self.render(); });
+        container.removeEventListener('mousemove', initRender);
+        container.removeEventListener('touchmove', initRender);
+    }
+    container.addEventListener('mousemove', initRender);
+    container.addEventListener('touchmove', initRender);
+}
+
+TrailEffect.prototype.render = function() {
+    var self = this;
+    if (!this.running) return;
+
+    var dx = this.mousePos.x - this.lastMousePos.x;
+    var dy = this.mousePos.y - this.lastMousePos.y;
+    var dist = Math.hypot(dx, dy);
+
+    this.cacheMousePos.x = lerp(this.cacheMousePos.x, this.mousePos.x, 0.1);
+    this.cacheMousePos.y = lerp(this.cacheMousePos.y, this.mousePos.y, 0.1);
+
+    if (dist > this.threshold) {
+        this.showNextImage();
+        this.lastMousePos = { x: this.mousePos.x, y: this.mousePos.y };
+    }
+    if (this.isIdle && this.zIndexVal !== 1) {
+        this.zIndexVal = 1;
+    }
+    requestAnimationFrame(function() { self.render(); });
+};
+
+TrailEffect.prototype.showNextImage = function() {
+    if (this.imagesTotal === 0) return;
+
+    this.zIndexVal++;
+    this.pos = this.pos < this.imagesTotal - 1 ? this.pos + 1 : 0;
+    var img = this.images[this.pos];
+
+    gsap.killTweensOf(img.el);
+    var tl = gsap.timeline({
+        onStart: function() { this.activeImagesCount++; this.isIdle = false; }.bind(this),
+        onComplete: function() {
+            this.activeImagesCount--;
+            if (this.activeImagesCount === 0) this.isIdle = true;
+        }.bind(this)
+    });
+
+    tl.fromTo(img.el, {
+        opacity: 1,
+        scale: 1,
+        zIndex: this.zIndexVal,
+        x: this.cacheMousePos.x - img.rect.width / 2,
+        y: this.cacheMousePos.y - img.rect.height / 2
+    }, {
+        duration: 0.4,
+        ease: 'power1',
+        x: this.mousePos.x - img.rect.width / 2,
+        y: this.mousePos.y - img.rect.height / 2
+    }, 0);
+
+    tl.to(img.el, {
+        duration: 0.4,
+        ease: 'power3',
+        opacity: 0,
+        scale: 0.2
+    }, 0.4);
+};
+
+TrailEffect.prototype.stop = function() {
+    this.running = false;
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+    // 如果来源是 fengmian.html（从小精灵页跳转），直接进入森林，不显示 rhizome 封面
+    var fromFairy = document.referrer.indexOf('fengmian.html') !== -1;
+    var skipCover = fromFairy || (new URLSearchParams(location.search).get('skip') === '1');
+
+    if (skipCover) {
+        var coverPage = document.getElementById('page-welcome');
+        if (coverPage) {
+            coverPage.style.display = 'none';
+            coverPage.classList.remove('active');
+        }
+        goToPage('page-forest');
+    } else {
+        // 正常流程：封面渐隐后进入森林
+        var coverPage = document.getElementById('page-welcome');
+        if (coverPage) {
+            coverPage.style.transition = 'opacity 1.2s ease';
+            coverPage.style.opacity = '0';
+            setTimeout(function() { coverPage.style.display = 'none'; }, 1200);
+        }
+
+        setTimeout(function() { goToPage('page-forest'); }, 1200);
+    }
+
+    // 保留按钮点击功能（以防需要重新进入）
+    var btn = document.getElementById('enter-btn');
+    if (btn) {
+        btn.style.display = 'none'; // 隐藏按钮
+    }
+
+    // 摄像头初始化（异步，不阻塞页面加载）
+    getCam()
+        .then(function(stream) {
+            var vid = document.getElementById('hidden-cam-video');
+            if (!vid) {
+                vid = document.createElement('video');
+                vid.id = 'hidden-cam-video';
+                vid.setAttribute('playsinline', '');
+                vid.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';
+                document.body.appendChild(vid);
+            }
+            vid.srcObject = stream;
+            vid.play();
+
+            var pv = document.getElementById('preview-video');
+            if (pv) pv.srcObject = stream;
+            var camWrap = document.getElementById('camera-preview');
+            if (camWrap) { camWrap.style.opacity = '1'; camWrap.style.transform = 'scale(1)'; }
+
+            video = { elt: vid, loadPixels: function() {}, updatePixels: function() {}, width: 640, height: 480 };
+            initML5FaceMesh();
+        })
+        .catch(function(err) {
+            if (err.message !== '不支持摄像头') {
+                document.getElementById('face-indicator').textContent = '灵觉休眠中（摄像头权限被拒绝，请在浏览器设置中允许摄像头）';
+            } else {
+                document.getElementById('face-indicator').textContent = '灵觉休眠中（浏览器不支持摄像头）';
+            }
+            var camWrap = document.getElementById('camera-preview');
+            if (camWrap) { camWrap.style.opacity = '0.2'; camWrap.style.borderColor = 'rgba(162,255,175,0.2)'; }
+        });
+});
+</script>
+</body>
+</html>
