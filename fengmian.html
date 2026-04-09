@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>根·Rhizome</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --ink: #0d1f1a;
+        --mist: rgba(180, 220, 200, 0.35);
+        --glow: rgba(255, 252, 235, 0.55);
+        --cta-bg: rgba(20, 45, 38, 0.55);
+        --cta-border: rgba(200, 235, 210, 0.45);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0a1612;
+        color: #e8f4ea;
+        font-family: "Noto Serif SC", "Songti SC", serif;
+      }
+
+      .cover {
+        position: relative;
+        min-height: 100dvh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        align-items: center;
+        padding: clamp(1.25rem, 4vw, 3rem);
+        padding-bottom: clamp(2rem, 8vh, 4.5rem);
+      }
+
+      .cover__media {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+      }
+
+      .cover__media img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center center;
+        filter: saturate(0.7) brightness(0.65) contrast(1.05);
+      }
+
+      .cover__media::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(
+            ellipse 52% 34% at 52% 45%,
+            rgba(214, 245, 226, 0.2) 0%,
+            rgba(214, 245, 226, 0.08) 38%,
+            transparent 72%
+          ),
+          radial-gradient(
+            ellipse 130% 90% at 50% 40%,
+            rgba(5, 20, 15, 0.45) 0%,
+            transparent 60%
+          ),
+          linear-gradient(
+            to bottom,
+            rgba(4, 12, 10, 0.6) 0%,
+            rgba(4, 12, 10, 0.2) 35%,
+            rgba(4, 12, 10, 0.5) 70%,
+            rgba(4, 12, 10, 0.82) 100%
+          );
+        pointer-events: none;
+      }
+
+      /* 胶片颗粒感 */
+      .cover__grain {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        opacity: 0.045;
+        pointer-events: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+        background-size: 180px 180px;
+      }
+
+      .rays {
+        position: absolute;
+        inset: -20%;
+        z-index: 2;
+        opacity: 0.62;
+        pointer-events: none;
+        mix-blend-mode: screen;
+        background:
+          conic-gradient(
+            from 215deg at 76% 7%,
+            transparent 0deg 12deg,
+            rgba(245, 255, 246, 0.09) 16deg 22deg,
+            transparent 26deg 41deg,
+            rgba(245, 255, 246, 0.07) 45deg 50deg,
+            transparent 54deg 360deg
+          ),
+          repeating-conic-gradient(
+            from 215deg at 76% 7%,
+            transparent 0deg 5deg,
+            rgba(245, 255, 246, 0.04) 6deg 8deg
+          );
+        filter: blur(0.25px);
+        transform-origin: 78% 8%;
+        transition: transform 0.6s ease-out;
+        animation: raysBreath 8s ease-in-out infinite alternate;
+      }
+
+      .light-core {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        pointer-events: none;
+        background: radial-gradient(
+          ellipse 42% 24% at 52% 46%,
+          rgba(212, 248, 224, 0.2) 0%,
+          rgba(212, 248, 224, 0.08) 35%,
+          transparent 72%
+        );
+      }
+
+      .vignette {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        pointer-events: none;
+        background: radial-gradient(
+          ellipse 130% 88% at 50% 48%,
+          transparent 40%,
+          rgba(3, 10, 8, 0.22) 64%,
+          rgba(3, 10, 8, 0.46) 100%
+        );
+      }
+
+      @keyframes raysBreath {
+        0% {
+          opacity: 0.55;
+        }
+        100% {
+          opacity: 0.72;
+        }
+      }
+
+      .content {
+        position: relative;
+        z-index: 4;
+        text-align: center;
+        max-width: 36rem;
+        text-shadow: 0 2px 24px rgba(0, 0, 0, 0.7),
+          0 0 60px rgba(0, 0, 0, 0.4);
+      }
+
+      /* 标题背后光晕 */
+      .content::before {
+        content: "";
+        display: block;
+        margin: -8% auto 0;
+        width: 70%;
+        max-width: 480px;
+        height: 55px;
+        background: radial-gradient(
+          ellipse at 50% 60%,
+          rgba(180, 225, 195, 0.22) 0%,
+          transparent 70%
+        );
+        pointer-events: none;
+      }
+
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: clamp(2.25rem, 7vw, 3.5rem);
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        line-height: 1.2;
+        color: rgba(245, 252, 246, 0.98);
+        text-shadow: 0 0 40px rgba(160, 210, 175, 0.25),
+          0 2px 20px rgba(0, 0, 0, 0.8);
+      }
+
+      .eyebrow {
+        margin: 0 0 0.5rem;
+        font-size: clamp(0.75rem, 2.2vw, 0.85rem);
+        letter-spacing: 0.35em;
+        text-transform: uppercase;
+        color: rgba(185, 215, 198, 0.8);
+        font-weight: 400;
+      }
+
+      .tagline {
+        margin: 0 0 2rem;
+        font-size: clamp(0.95rem, 2.8vw, 1.1rem);
+        line-height: 1.75;
+        color: rgba(220, 238, 228, 0.92);
+        font-weight: 400;
+      }
+
+      .cta {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.85rem 2.25rem;
+        border-radius: 999px;
+        border: 1px solid var(--cta-border);
+        background: var(--cta-bg);
+        color: #f0faf3;
+        font-family: inherit;
+        font-size: 1rem;
+        letter-spacing: 0.2em;
+        text-decoration: none;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        transition: background 0.35s ease, border-color 0.35s ease,
+          transform 0.35s ease, box-shadow 0.35s ease;
+      }
+
+      .cta:hover,
+      .cta:focus-visible {
+        background: rgba(35, 72, 58, 0.65);
+        border-color: var(--glow);
+        transform: translateY(-2px);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08),
+          0 12px 40px rgba(0, 0, 0, 0.35);
+      }
+
+      .cta:focus-visible {
+        outline: 2px solid rgba(255, 255, 255, 0.5);
+        outline-offset: 4px;
+      }
+
+      .hint {
+        margin-top: 1.25rem;
+        font-size: 0.8rem;
+        letter-spacing: 0.08em;
+        color: rgba(180, 205, 190, 0.65);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .rays {
+          transition: none;
+          animation: none;
+        }
+        .cta {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 将森林封面图保存为同目录下 assets/cover.png（与对话中提供的插图一致） -->
+    <main class="cover" id="cover">
+      <div class="cover__media" aria-hidden="true">
+        <img
+          src="./assets/cover.png?v=1583"
+          alt=""
+          width="1920"
+          height="1080"
+          decoding="async"
+          fetchpriority="high"
+        />
+      </div>
+      <div class="cover__grain" aria-hidden="true"></div>
+      <div class="rays" id="rays" aria-hidden="true"></div>
+      <div class="light-core" aria-hidden="true"></div>
+      <div class="vignette" aria-hidden="true"></div>
+      <div class="content">
+        <p class="eyebrow">Rhizome</p>
+        <h1>根·Rhizome</h1>
+        <p class="tagline">
+          在光与苔之间，情绪像菌丝悄悄相连。<br />
+          放慢呼吸，走进这片会回应你的森林。
+        </p>
+        <a class="cta" href="./rhizome.html?skip=1">进入森林</a>
+        <p class="hint">轻触即可开始 · 建议在安静环境佩戴耳机</p>
+      </div>
+    </main>
+
+    <!-- 小精灵画布层 -->
+    <canvas id="fairy-canvas"></canvas>
+    <style>
+      #fairy-canvas {
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        z-index: 4;
+        pointer-events: none;
+      }
+    </style>
+    <script>
+      (function () {
+        var canvas = document.getElementById("fairy-canvas");
+        var ctx    = canvas.getContext("2d");
+
+        function resize() {
+          canvas.width  = window.innerWidth;
+          canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener("resize", resize);
+
+        /**
+         * 手绘小精灵（Tripo 风）：绿渐变身体、白头、绿帽（深浅青渐变）、
+         * 帽尖高亮发光眼、深色细腿、椭圆投影。森林暗色调适配。
+         */
+        function drawFairy(cx, baseY, scale, breathOffset) {
+          var w = canvas.width;
+          var h = canvas.height;
+          ctx.clearRect(0, 0, w, h);
+
+          var s = scale;
+
+          // 椭圆投影
+          ctx.save();
+          ctx.fillStyle = "rgba(0,0,0,0.22)";
+          ctx.beginPath();
+          ctx.ellipse(cx, baseY + 88 * s, 24 * s, 8 * s, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          // 身体（绿渐变）
+          var bodyGrad = ctx.createLinearGradient(cx, baseY, cx, baseY + 72 * s);
+          bodyGrad.addColorStop(0, "#b8ff9f");
+          bodyGrad.addColorStop(1, "#5edc6a");
+          ctx.fillStyle = bodyGrad;
+          ctx.beginPath();
+          ctx.moveTo(cx, baseY + breathOffset);
+          ctx.lineTo(cx - 36 * s, baseY + 72 * s);
+          ctx.lineTo(cx + 36 * s, baseY + 72 * s);
+          ctx.closePath();
+          ctx.fill();
+
+          // 头
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.arc(cx, baseY - 14 * s + breathOffset, 17 * s, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 帽檐（深浅青渐变）
+          var hatGrad = ctx.createLinearGradient(cx, baseY - 52 * s, cx, baseY);
+          hatGrad.addColorStop(0, "#1f7a6d");
+          hatGrad.addColorStop(1, "#2ec4b6");
+          ctx.fillStyle = hatGrad;
+          ctx.beginPath();
+          ctx.arc(cx, baseY - 14 * s + breathOffset, 25 * s, Math.PI, 0);
+          ctx.fill();
+
+          // 帽尖
+          ctx.beginPath();
+          ctx.moveTo(cx, baseY - 58 * s + breathOffset);
+          ctx.lineTo(cx - 10 * s, baseY - 14 * s + breathOffset);
+          ctx.lineTo(cx + 10 * s, baseY - 14 * s + breathOffset);
+          ctx.closePath();
+          ctx.fill();
+
+          // 发光眼
+          ctx.save();
+          ctx.fillStyle   = "#a8ff85";
+          ctx.shadowColor = "#a8ff85";
+          ctx.shadowBlur  = 12;
+          ctx.beginPath();
+          ctx.arc(cx - 13 * s, baseY - 10 * s + breathOffset, 4.5 * s, 0, Math.PI * 2);
+          ctx.arc(cx + 13 * s, baseY - 10 * s + breathOffset, 4.5 * s, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          // 细腿
+          ctx.save();
+          ctx.strokeStyle = "#1c2b39";
+          ctx.lineWidth   = 4.5 * s;
+          ctx.lineCap     = "round";
+          ctx.beginPath();
+          ctx.moveTo(cx - 6 * s,  baseY + 72 * s);
+          ctx.lineTo(cx - 6 * s,  baseY + 98 * s);
+          ctx.moveTo(cx + 6 * s,  baseY + 72 * s);
+          ctx.lineTo(cx + 6 * s,  baseY + 98 * s);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        var t      = 0;
+        var cx     = canvas.width  * 0.66;
+        var baseY  = canvas.height * 0.50;
+
+        function animate() {
+          cx    = canvas.width  * 0.66;
+          baseY = canvas.height * 0.50;
+
+          var breath = Math.sin(t) * 2.2;
+          drawFairy(cx, baseY, 1.35, breath);
+          t += 0.042;
+          requestAnimationFrame(animate);
+        }
+        animate();
+      })();
+    </script>
+  </body>
+</html>
